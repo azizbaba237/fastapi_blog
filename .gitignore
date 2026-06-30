@@ -1,0 +1,42 @@
+# ===== Backend (Python / FastAPI) =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+venv/
+env/
+.venv/
+*.sqlite3
+*.db
+
+# Variables d'environnement (secrets, mots de passe, clés API)
+.env
+.env.local
+.env.*.local
+
+# Alembic (si tu utilises les migrations)
+# (on garde le dossier versions, on ignore juste les fichiers temporaires)
+
+# ===== Frontend (React / Vite) =====
+node_modules/
+dist/
+build/
+.vite/
+*.local
+
+# Logs npm/yarn
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== Éditeurs / OS =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ===== Divers =====
+*.log
+.cache/
+coverage/
