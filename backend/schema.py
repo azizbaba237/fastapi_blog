@@ -26,6 +26,11 @@ class PostBase(BaseModel):
 # Create class for creating a new post
 class PostCreate(PostBase):
     user_id: int # for testing 
+    
+# Update class for updating an existing post
+class PostUpdate(BaseModel):
+    title: str | None = Field(min_length=1, max_length=100, default=None)
+    content: str | None = Field(min_length=1, default=None)
 
 # Response class for returning post data
 class PostResponse(PostBase):
