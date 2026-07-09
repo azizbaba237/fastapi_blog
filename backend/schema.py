@@ -2,13 +2,17 @@ from pydantic import BaseModel, ConfigDict, Field, EmailStr
 from datetime import datetime 
 
 
+# Base class for user data
 class UserBase(BaseModel):
     username: str = Field(min_length=1, max_length=50)
     email : EmailStr = Field(max_length=120)
 
-
 class UserCreate(UserBase):
     pass
+
+class UserUpdate(BaseModel):
+    username: str | None = Field(min_length=1, max_length=50, default=None)
+    email: str | None = Field(max_length=100, default=None)
 
 class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
