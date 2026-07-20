@@ -12,7 +12,8 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     username: str | None = Field(min_length=1, max_length=50, default=None)
-    email: str | None = Field(max_length=100, default=None)
+    email: EmailStr | None = Field(max_length=100, default=None)
+    image_file: str | None = Field(default=None, min_length=1, max_length=200)
 
 class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)

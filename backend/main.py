@@ -154,6 +154,9 @@ def update_user(user_id: int, user_data: UserUpdate, db: Annotated[Session, Depe
     if "email" in update_data and update_data["email"] is not None:
         db_user.email = update_data["email"]
         
+    if "image_file" in update_data and update_data["image_file"] is not None:
+        db_user.image_file = update_data["image_file"]
+        
     db.commit()
     db.refresh(db_user)
     return db_user
@@ -176,6 +179,24 @@ def get_user_posts(user_id: int, db: Annotated[Session, Depends(get_db)]):
     result = db.execute(select(models.Post).where(models.Post.user_id == user_id))
     posts = result.scalars().all()
     return posts
+
+
+@app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+    """
+    API : Supprimer un utilisateur et ses posts de la base de donné".
+    """
+    result = db.execute(select(models.User).where(models.User.id == user_id))
+    user = result.scalars().first()
+    
+    if not user :
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    db.delete(user)
+    db.commit()
 
 
 # =============================================================================
