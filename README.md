@@ -1,6 +1,6 @@
 # FastAPI Blog
 
-Application de blog full-stack avec une API backend en **FastAPI** et une interface utilisateur en **React (Vite)**.
+Application de blog full-stack avec une API backend asynchrone en **FastAPI** et une interface utilisateur en **React (Vite)**.
 
 ## Sommaire
 
@@ -13,38 +13,50 @@ Application de blog full-stack avec une API backend en **FastAPI** et une interf
   - [Frontend](#frontend)
 - [Variables d'environnement](#variables-denvironnement)
 - [Lancer le projet](#lancer-le-projet)
-- [Documentation de l'API](#documentation-de-lapi)
+- [Endpoints de l'API](#endpoints-de-lapi)
+- [Documentation interactive](#documentation-interactive)
+- [Tests](#tests)
 - [Roadmap](#roadmap)
 - [Auteur](#auteur)
 
 ## Aperçu
 
-Ce projet est un blog permettant aux utilisateurs de créer, consulter, modifier et supprimer des articles. Il est composé de deux parties indépendantes :
+Plateforme de blog permettant aux utilisateurs de créer, consulter, modifier et supprimer des articles. Le backend expose une API REST asynchrone et un rendu HTML via Jinja2, tandis que le frontend React communique avec l'API.
 
-- **backend/** : une API REST développée avec FastAPI
-- **frontend/** : une interface web développée avec React
+- **backend/** : API REST asynchrone développée avec FastAPI + SQLAlchemy async
+- **frontend/** : interface web développée avec React (Vite)
 
 ## Stack technique
 
 **Backend**
-- Python 3.x
+- Python 3.10+
 - FastAPI
+- SQLAlchemy (mode asynchrone) + aiosqlite
+- Pydantic v2 (validation et sérialisation des données)
+- Jinja2 (rendu HTML côté serveur)
 - [uv](https://docs.astral.sh/uv/) (gestion des dépendances et de l'environnement virtuel)
-- Pydantic (validation des données)
 
 **Frontend**
 - React (Vite)
 - JavaScript / JSX
-- Axios (requêtes HTTP)
 
-> Le projet est encore en début de développement. La base de données et l'authentification ne sont pas encore en place ; cette section sera complétée au fur et à mesure de l'avancement.
+**Tests**
+- pytest
+- httpx + TestClient (FastAPI)
 
 ## Structure du projet
 
 ```
 fastapi_blog/
 ├── backend/
-│   ├── main.py
+│   ├── main.py           ← Application FastAPI, lifespan, error handlers
+│   ├── database.py       ← Configuration SQLAlchemy async
+│   ├── models.py         ← Modèles ORM (User, Post)
+│   ├── schema.py         ← Schémas Pydantic (Create, Response, Update)
+│   ├── test_main.py      ← Tests automatisés (pytest)
+│   ├── static/           ← Fichiers CSS, JS
+│   ├── media/            ← Fichiers uploadés (images profil, etc.)
+│   ├── templates/        ← Templates HTML Jinja2
 │   ├── pyproject.toml
 │   └── .env.example
 ├── frontend/
@@ -55,8 +67,6 @@ fastapi_blog/
 ├── .gitignore
 └── README.md
 ```
-
-> Adapte cette arborescence si la structure réelle de ton projet diffère.
 
 ## Prérequis
 
@@ -73,7 +83,8 @@ fastapi_blog/
 cd backend
 uv sync
 ```
-`uv sync` installe automatiquement les dépendances listées dans `pyproject.toml` et crée l'environnement virtuel.
+
+`uv sync` installe automatiquement les dépendances depuis `pyproject.toml` et crée l'environnement virtuel.
 
 ### Frontend
 
@@ -84,13 +95,17 @@ npm install
 
 ## Variables d'environnement
 
-Crée un fichier `.env` dans le dossier `frontend/` :
+Crée un fichier `.env` dans `backend/` (inspire-toi de `.env.example`) :
+
+```
+DATABASE_URL=sqlite+aiosqlite:///./blog.db
+```
+
+Crée un fichier `.env` dans `frontend/` :
 
 ```
 VITE_API_URL=http://localhost:8000
 ```
-
-(Le backend n'a pas encore de variables d'environnement nécessaires à ce stade du projet.)
 
 ## Lancer le projet
 
@@ -99,6 +114,7 @@ VITE_API_URL=http://localhost:8000
 ```bash
 fastapi dev main.py
 ```
+
 L'API sera disponible sur `http://localhost:8000`
 
 **Frontend** (depuis le dossier `frontend/`) :
@@ -106,26 +122,78 @@ L'API sera disponible sur `http://localhost:8000`
 ```bash
 npm run dev
 ```
+
 L'application sera disponible sur `http://localhost:5173`
 
-## Documentation de l'API
+## Endpoints de l'API
 
-FastAPI génère automatiquement une documentation interactive :
+### Articles (Posts)
+
+| Méthode  | Endpoint              | Description                        |
+|----------|-----------------------|------------------------------------|
+| `GET`    | `/api/posts`          | Lister tous les articles           |
+| `POST`   | `/api/posts`          | Créer un nouvel article            |
+| `GET`    | `/api/posts/{id}`     | Récupérer un article par son ID    |
+| `PUT`    | `/api/posts/{id}`     | Mise à jour complète d'un article  |
+| `PATCH`  | `/api/posts/{id}`     | Mise à jour partielle d'un article |
+| `DELETE` | `/api/posts/{id}`     | Supprimer un article               |
+
+### Utilisateurs (Users)
+
+| Méthode  | Endpoint                    | Description                            |
+|----------|-----------------------------|----------------------------------------|
+| `POST`   | `/api/users`                | Créer un nouvel utilisateur            |
+| `GET`    | `/api/users/{id}`           | Récupérer un utilisateur par son ID    |
+| `PUT`    | `/api/users/{id}`           | Mise à jour complète d'un utilisateur  |
+| `DELETE` | `/api/users/{id}`           | Supprimer un utilisateur               |
+| `GET`    | `/api/users/{id}/posts`     | Lister les articles d'un utilisateur   |
+
+### Pages HTML
+
+| Route              | Description                          |
+|--------------------|--------------------------------------|
+| `/`                | Page d'accueil — liste des articles  |
+| `/posts`           | Alias de la page d'accueil           |
+| `/posts/{id}`      | Page de détail d'un article          |
+| `/users/{id}/posts`| Articles d'un utilisateur            |
+
+## Documentation interactive
+
+FastAPI génère automatiquement une documentation de l'API :
 
 - Swagger UI : `http://localhost:8000/docs`
 - Redoc : `http://localhost:8000/redoc`
 
+## Tests
+
+Les tests utilisent `pytest` et le `TestClient` de FastAPI.
+
+```bash
+cd backend
+pytest test_main.py -v
+```
+
 ## Roadmap
 
-- [ ] Mise en place de la base de données
-- [ ] Création des modèles d'articles (CRUD)
-- [ ] Authentification complète (inscription / connexion)
+- [x] Structure du projet (backend + frontend)
+- [x] Rendu HTML avec Jinja2 et fichiers statiques
+- [x] Mode asynchrone (SQLAlchemy async + aiosqlite)
+- [x] Schémas Pydantic (validation et sérialisation)
+- [x] CRUD complet — Articles (GET, POST, PUT, PATCH, DELETE)
+- [x] CRUD complet — Utilisateurs (GET, POST, PUT, DELETE)
+- [x] Gestion globale des erreurs (HTML et API)
+- [x] Tests automatisés (pytest + TestClient)
+- [ ] Découpage en routers (posts.py / users.py)
+- [ ] Hashage des mots de passe (passlib + bcrypt)
+- [ ] Authentification JWT
+- [ ] Protection des routes (get_current_user)
 - [ ] Gestion des commentaires
 - [ ] Upload d'images pour les articles
-- [ ] Pagination et recherche d'articles
-- [ ] Déploiement (backend + frontend)
+- [ ] Pagination et recherche
+- [ ] Connexion avec le frontend React
+- [ ] Déploiement
 
 ## Auteur
 
-**Abdoul Aziz Baba**
+**Abdoul Aziz Baba**  
 Développeur Fullstack — Douala, Cameroun
