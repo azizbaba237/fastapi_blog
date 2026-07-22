@@ -29,41 +29,55 @@ Plateforme de blog permettant aux utilisateurs de créer, consulter, modifier et
 ## Stack technique
 
 **Backend**
-- Python 3.10+
+- Python 3.13
 - FastAPI
-- SQLAlchemy (mode asynchrone) + aiosqlite
+- SQLAlchemy 2.0 (mode asynchrone) + aiosqlite
 - Pydantic v2 (validation et sérialisation des données)
 - Jinja2 (rendu HTML côté serveur)
-- [uv](https://docs.astral.sh/uv/) (gestion des dépendances et de l'environnement virtuel)
+- [uv](https://docs.astral.sh/uv/) (gestion des dépendances et environnement virtuel)
 
 **Frontend**
 - React (Vite)
 - JavaScript / JSX
 
 **Tests**
-- pytest
-- httpx + TestClient (FastAPI)
+- pytest + pytest-asyncio
+- httpx (AsyncClient)
 
 ## Structure du projet
 
 ```
 fastapi_blog/
 ├── backend/
-│   ├── main.py           ← Application FastAPI, lifespan, error handlers
-│   ├── database.py       ← Configuration SQLAlchemy async
-│   ├── models.py         ← Modèles ORM (User, Post)
-│   ├── schema.py         ← Schémas Pydantic (Create, Response, Update)
-│   ├── test_main.py      ← Tests automatisés (pytest)
-│   ├── static/           ← Fichiers CSS, JS
-│   ├── media/            ← Fichiers uploadés (images profil, etc.)
-│   ├── templates/        ← Templates HTML Jinja2
-│   ├── pyproject.toml
-│   └── .env.example
+│   ├── routes/
+│   │   ├── posts.py          ← Endpoints API + pages HTML des articles
+│   │   ├── users.py          ← Endpoints API + pages HTML des utilisateurs
+│   │   └── __init__.py
+│   ├── static/
+│   │   ├── css/
+│   │   │   └── main.css
+│   │   ├── js/
+│   │   │   └── utils.js
+│   │   └── icons/
+│   ├── media/
+│   │   └── profile_pics/     ← Photos de profil uploadées (ignorées par Git)
+│   ├── templates/
+│   │   ├── layout.html       ← Template de base (héritage Jinja2)
+│   │   ├── home.html
+│   │   ├── post.html
+│   │   ├── user_posts.html
+│   │   └── error.html
+│   ├── main.py               ← Application FastAPI, lifespan, error handlers
+│   ├── database.py           ← Configuration SQLAlchemy async
+│   ├── models.py             ← Modèles ORM (User, Post)
+│   ├── schema.py             ← Schémas Pydantic (Create, Response, Update)
+│   ├── test_main.py          ← Tests automatisés (pytest)
+│   ├── pytest.ini
+│   └── pyproject.toml
 ├── frontend/
 │   ├── src/
 │   ├── public/
-│   ├── package.json
-│   └── .env.example
+│   └── package.json
 ├── .gitignore
 └── README.md
 ```
@@ -84,7 +98,7 @@ cd backend
 uv sync
 ```
 
-`uv sync` installe automatiquement les dépendances depuis `pyproject.toml` et crée l'environnement virtuel.
+`uv sync` installe automatiquement toutes les dépendances depuis `pyproject.toml` et crée l'environnement virtuel.
 
 ### Frontend
 
@@ -129,33 +143,33 @@ L'application sera disponible sur `http://localhost:5173`
 
 ### Articles (Posts)
 
-| Méthode  | Endpoint              | Description                        |
-|----------|-----------------------|------------------------------------|
-| `GET`    | `/api/posts`          | Lister tous les articles           |
-| `POST`   | `/api/posts`          | Créer un nouvel article            |
-| `GET`    | `/api/posts/{id}`     | Récupérer un article par son ID    |
-| `PUT`    | `/api/posts/{id}`     | Mise à jour complète d'un article  |
-| `PATCH`  | `/api/posts/{id}`     | Mise à jour partielle d'un article |
-| `DELETE` | `/api/posts/{id}`     | Supprimer un article               |
+| Méthode  | Endpoint           | Description                        |
+|----------|--------------------|------------------------------------|
+| `GET`    | `/api/posts`       | Lister tous les articles           |
+| `POST`   | `/api/posts`       | Créer un nouvel article            |
+| `GET`    | `/api/posts/{id}`  | Récupérer un article par son ID    |
+| `PUT`    | `/api/posts/{id}`  | Mise à jour complète d'un article  |
+| `PATCH`  | `/api/posts/{id}`  | Mise à jour partielle d'un article |
+| `DELETE` | `/api/posts/{id}`  | Supprimer un article               |
 
 ### Utilisateurs (Users)
 
-| Méthode  | Endpoint                    | Description                            |
-|----------|-----------------------------|----------------------------------------|
-| `POST`   | `/api/users`                | Créer un nouvel utilisateur            |
-| `GET`    | `/api/users/{id}`           | Récupérer un utilisateur par son ID    |
-| `PUT`    | `/api/users/{id}`           | Mise à jour complète d'un utilisateur  |
-| `DELETE` | `/api/users/{id}`           | Supprimer un utilisateur               |
-| `GET`    | `/api/users/{id}/posts`     | Lister les articles d'un utilisateur   |
+| Méthode  | Endpoint                | Description                           |
+|----------|-------------------------|---------------------------------------|
+| `POST`   | `/api/users`            | Créer un nouvel utilisateur           |
+| `GET`    | `/api/users/{id}`       | Récupérer un utilisateur par son ID   |
+| `PUT`    | `/api/users/{id}`       | Mise à jour complète d'un utilisateur |
+| `DELETE` | `/api/users/{id}`       | Supprimer un utilisateur              |
+| `GET`    | `/api/users/{id}/posts` | Lister les articles d'un utilisateur  |
 
 ### Pages HTML
 
-| Route              | Description                          |
-|--------------------|--------------------------------------|
-| `/`                | Page d'accueil — liste des articles  |
-| `/posts`           | Alias de la page d'accueil           |
-| `/posts/{id}`      | Page de détail d'un article          |
-| `/users/{id}/posts`| Articles d'un utilisateur            |
+| Route                | Description                         |
+|----------------------|-------------------------------------|
+| `/`                  | Page d'accueil — liste des articles |
+| `/posts`             | Alias de la page d'accueil          |
+| `/posts/{id}`        | Page de détail d'un article         |
+| `/users/{id}/posts`  | Articles d'un utilisateur           |
 
 ## Documentation interactive
 
@@ -166,7 +180,7 @@ FastAPI génère automatiquement une documentation de l'API :
 
 ## Tests
 
-Les tests utilisent `pytest` et le `TestClient` de FastAPI.
+Les tests utilisent `pytest`, `pytest-asyncio` et `httpx` avec une base de données SQLite dédiée aux tests, entièrement isolée de la base de données principale.
 
 ```bash
 cd backend
@@ -178,12 +192,12 @@ pytest test_main.py -v
 - [x] Structure du projet (backend + frontend)
 - [x] Rendu HTML avec Jinja2 et fichiers statiques
 - [x] Mode asynchrone (SQLAlchemy async + aiosqlite)
-- [x] Schémas Pydantic (validation et sérialisation)
+- [x] Schémas Pydantic v2 (validation et sérialisation)
 - [x] CRUD complet — Articles (GET, POST, PUT, PATCH, DELETE)
 - [x] CRUD complet — Utilisateurs (GET, POST, PUT, DELETE)
+- [x] Découpage en routers (routes/posts.py, routes/users.py)
 - [x] Gestion globale des erreurs (HTML et API)
-- [x] Tests automatisés (pytest + TestClient)
-- [ ] Découpage en routers (posts.py / users.py)
+- [x] Tests automatisés (pytest-asyncio + httpx)
 - [ ] Hashage des mots de passe (passlib + bcrypt)
 - [ ] Authentification JWT
 - [ ] Protection des routes (get_current_user)

@@ -40,3 +40,7 @@ Thumbs.db
 *.log
 .cache/
 coverage/
+
+# Fichiers médias uploadés par les utilisateurs
+media/profile_pics/*
+!media/profile_pics/.gitkeep

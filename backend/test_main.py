@@ -1,38 +1,228 @@
-# test_main.py
 import pytest
-from fastapi.testclient import TestClient
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from main import app
+from database import get_db, Base
 
-# On crée notre "robot" qui va parler à l'application
-client = TestClient(app)
+# ─────────────────────────────────────────────
+# CONFIGURATION DE LA BASE DE DONNÉES DE TEST
+# ─────────────────────────────────────────────
+
+# On crée une BD SQLite séparée juste pour les tests
+# "memory" = elle n'existe que pendant le test, rien n'est sauvegardé sur le disque
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test_blog.db"
+
+test_engine = create_async_engine(TEST_DATABASE_URL)
+TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
 
 
-# ✅ TEST 1 : Est-ce que /api/posts répond bien ?
-def test_get_all_posts():
-    response = client.get("/api/posts")          # Le robot demande la liste des posts
-    assert response.status_code == 200           # On vérifie que c'est OK (200)
-    assert isinstance(response.json(), list)     # On vérifie que c'est bien une liste
-    assert len(response.json()) > 0              # On vérifie qu'il y a au moins 1 post
+async def get_test_db():
+    """Notre fausse BD de test, qui remplace la vraie pendant les tests."""
+    async with TestSessionLocal() as session:
+        yield session
 
 
-# ✅ TEST 2 : Est-ce qu'on peut récupérer un post qui existe ?
-def test_get_post_existant():
-    response = client.get("/api/posts/1")        # Le robot demande le post n°1
+# ─────────────────────────────────────────────
+# FIXTURES (outils réutilisables pour les tests)
+# ─────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+async def setup_database():
+    """
+    Cette fixture tourne avant ET après CHAQUE test.
+    
+    Avant : elle crée toutes les tables dans la BD de test (vide)
+    Après  : elle efface tout pour que le test suivant reparte de zéro
+    
+    C'est comme préparer une table propre avant chaque repas,
+    et tout débarrasser après.
+    """
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)   # Créer les tables
+
+    yield  # ← ici les tests s'exécutent
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)     # Effacer les tables
+
+
+@pytest.fixture
+async def client():
+    """
+    Notre robot de test qui envoie des requêtes à l'app.
+    
+    On lui dit d'utiliser la BD de test au lieu de la vraie BD,
+    grâce au système d'override de FastAPI.
+    """
+    app.dependency_overrides[get_db] = get_test_db  # ← le "remplacement" de BD
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test"
+    ) as ac:
+        yield ac
+
+    app.dependency_overrides.clear()  # On remet tout comme avant après le test
+
+
+# ─────────────────────────────────────────────
+# TESTS — UTILISATEURS
+# ─────────────────────────────────────────────
+
+async def test_creer_un_utilisateur(client):
+    """On vérifie qu'on peut créer un utilisateur correctement."""
+    response = await client.post("/api/users", json={
+        "username": "abdoul",
+        "email": "abdoul@example.com"
+    })
+    assert response.status_code == 201          # 201 = Créé avec succès
+    data = response.json()
+    assert data["username"] == "abdoul"
+    assert data["email"] == "abdoul@example.com"
+    assert "id" in data                         # L'utilisateur a bien un ID
+
+
+async def test_creer_utilisateur_username_duplique(client):
+    """On vérifie qu'on ne peut pas créer 2 utilisateurs avec le même pseudo."""
+    # On crée le premier
+    await client.post("/api/users", json={
+        "username": "abdoul",
+        "email": "abdoul@example.com"
+    })
+    # On essaie d'en créer un second avec le même username
+    response = await client.post("/api/users", json={
+        "username": "abdoul",
+        "email": "autre@example.com"
+    })
+    assert response.status_code == 400          # 400 = Mauvaise requête
+    assert "Username already exists" in response.json()["detail"]
+
+
+async def test_recuperer_utilisateur_existant(client):
+    """On vérifie qu'on peut récupérer un utilisateur par son ID."""
+    # D'abord on le crée
+    create = await client.post("/api/users", json={
+        "username": "abdoul",
+        "email": "abdoul@example.com"
+    })
+    user_id = create.json()["id"]
+
+    # Ensuite on le récupère
+    response = await client.get(f"/api/users/{user_id}")
+    assert response.status_code == 200
+    assert response.json()["username"] == "abdoul"
+
+
+async def test_recuperer_utilisateur_inexistant(client):
+    """On vérifie qu'on obtient bien une erreur 404 si l'utilisateur n'existe pas."""
+    response = await client.get("/api/users/9999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
+async def test_supprimer_utilisateur(client):
+    """On vérifie qu'on peut supprimer un utilisateur."""
+    create = await client.post("/api/users", json={
+        "username": "abdoul",
+        "email": "abdoul@example.com"
+    })
+    user_id = create.json()["id"]
+
+    # On supprime
+    response = await client.delete(f"/api/users/{user_id}")
+    assert response.status_code == 204          # 204 = Supprimé, pas de contenu
+
+    # On vérifie qu'il n'existe plus
+    response = await client.get(f"/api/users/{user_id}")
+    assert response.status_code == 404
+
+
+# ─────────────────────────────────────────────
+# TESTS — ARTICLES (POSTS)
+# ─────────────────────────────────────────────
+
+@pytest.fixture
+async def utilisateur(client):
+    """
+    Fixture qui crée un utilisateur prêt à l'emploi.
+    Tous les tests de posts en ont besoin, donc on le met ici
+    pour ne pas répéter ce code dans chaque test.
+    """
+    response = await client.post("/api/users", json={
+        "username": "abdoul",
+        "email": "abdoul@example.com"
+    })
+    return response.json()
+
+
+async def test_creer_un_post(client, utilisateur):
+    """On vérifie qu'on peut créer un article."""
+    response = await client.post("/api/posts", json={
+        "title": "Mon premier article",
+        "content": "Contenu de test.",
+        "user_id": utilisateur["id"]
+    })
+    assert response.status_code == 201
+    data = response.json()
+    assert data["title"] == "Mon premier article"
+    assert data["content"] == "Contenu de test."
+
+
+async def test_creer_post_utilisateur_inexistant(client):
+    """On ne peut pas créer un post pour un utilisateur qui n'existe pas."""
+    response = await client.post("/api/posts", json={
+        "title": "Article fantôme",
+        "content": "Contenu.",
+        "user_id": 9999          # cet utilisateur n'existe pas
+    })
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
+async def test_lister_tous_les_posts(client, utilisateur):
+    """On vérifie que la liste des posts fonctionne."""
+    # On crée 2 posts
+    await client.post("/api/posts", json={
+        "title": "Article 1", "content": "...", "user_id": utilisateur["id"]
+    })
+    await client.post("/api/posts", json={
+        "title": "Article 2", "content": "...", "user_id": utilisateur["id"]
+    })
+
+    response = await client.get("/api/posts")
+    assert response.status_code == 200
+    assert len(response.json()) == 2            # Il doit y en avoir exactement 2
+
+
+async def test_modifier_post_partiel(client, utilisateur):
+    """On vérifie que le PATCH ne modifie que ce qu'on lui donne."""
+    create = await client.post("/api/posts", json={
+        "title": "Titre original",
+        "content": "Contenu original.",
+        "user_id": utilisateur["id"]
+    })
+    post_id = create.json()["id"]
+
+    # On modifie seulement le titre
+    response = await client.patch(f"/api/posts/{post_id}", json={
+        "title": "Nouveau titre"
+    })
     assert response.status_code == 200
     data = response.json()
-    assert data["id"] == 1                       # C'est bien le post n°1
-    assert "title" in data                       # Il a bien un titre
-    assert "content" in data                     # Il a bien un contenu
+    assert data["title"] == "Nouveau titre"
+    assert data["content"] == "Contenu original."  # le contenu n'a pas changé !
 
 
-# ✅ TEST 3 : Que se passe-t-il si le post n'existe pas ?
-def test_get_post_inexistant():
-    response = client.get("/api/posts/9999")     # Le post 9999 n'existe pas
-    assert response.status_code == 404           # On doit avoir une erreur 404
-    assert response.json()["detail"] == "Post not found"
+async def test_supprimer_post(client, utilisateur):
+    """On vérifie qu'on peut supprimer un post."""
+    create = await client.post("/api/posts", json={
+        "title": "À supprimer", "content": "...", "user_id": utilisateur["id"]
+    })
+    post_id = create.json()["id"]
 
+    response = await client.delete(f"/api/posts/{post_id}")
+    assert response.status_code == 204
 
-# ✅ TEST 4 : Et si on passe un ID qui n'est pas un nombre ?
-def test_get_post_id_invalide():
-    response = client.get("/api/posts/abc")      # "abc" c'est pas un nombre entier
-    assert response.status_code == 422           # FastAPI doit rejeter ça (422)
+    # Il ne doit plus exister
+    response = await client.get(f"/api/posts/{post_id}")
+    assert response.status_code == 404
