@@ -226,3 +226,64 @@ async def test_supprimer_post(client, utilisateur):
     # Il ne doit plus exister
     response = await client.get(f"/api/posts/{post_id}")
     assert response.status_code == 404
+    
+    
+    # =============================================================================
+# HTML PAGE TESTS
+# =============================================================================
+
+async def test_home_page_loads(client):
+    """Home page must return 200 with an empty post list."""
+    response = await client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+async def test_home_page_shows_posts(client, utilisateur):
+    """Home page must display posts once they exist."""
+    await client.post("/api/posts", json={
+        "title": "Test Post",
+        "content": "Hello world.",
+        "user_id": utilisateur["id"]
+    })
+    response = await client.get("/")
+    assert response.status_code == 200
+    assert "Test Post" in response.text       # le titre apparaît dans la page
+
+
+async def test_post_page_loads(client, utilisateur):
+    """Post detail page must return 200 for an existing post."""
+    create = await client.post("/api/posts", json={
+        "title": "Detail Test",
+        "content": "Content here.",
+        "user_id": utilisateur["id"]
+    })
+    post_id = create.json()["id"]
+
+    response = await client.get(f"/posts/{post_id}")
+    assert response.status_code == 200
+    assert "Detail Test" in response.text
+
+
+async def test_post_page_404(client):
+    """Post detail page must return 404 for a non-existent post."""
+    response = await client.get("/posts/9999")
+    assert response.status_code == 404
+
+
+async def test_user_posts_page_loads(client, utilisateur):
+    """User posts page must return 200 and show the user's posts."""
+    await client.post("/api/posts", json={
+        "title": "User Post",
+        "content": "Written by the user.",
+        "user_id": utilisateur["id"]
+    })
+    response = await client.get(f"/users/{utilisateur['id']}/posts")
+    assert response.status_code == 200
+    assert "User Post" in response.text
+
+
+async def test_user_posts_page_404(client):
+    """User posts page must return 404 for a non-existent user."""
+    response = await client.get("/users/9999/posts")
+    assert response.status_code == 404
