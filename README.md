@@ -21,10 +21,10 @@ Application de blog full-stack avec une API backend asynchrone en **FastAPI** et
 
 ## Aperçu
 
-Plateforme de blog permettant aux utilisateurs de créer, consulter, modifier et supprimer des articles. Le backend expose une API REST asynchrone et un rendu HTML via Jinja2, tandis que le frontend React communique avec l'API.
+Plateforme de blog permettant aux utilisateurs de s'inscrire, se connecter, et créer, consulter, modifier ou supprimer des articles. Le backend expose une API REST asynchrone sécurisée par JWT et un rendu HTML via Jinja2.
 
-- **backend/** : API REST asynchrone développée avec FastAPI + SQLAlchemy async
-- **frontend/** : interface web développée avec React (Vite)
+- **backend/** : API REST asynchrone — FastAPI + SQLAlchemy async + authentification JWT
+- **frontend/** : interface web — React (Vite)
 
 ## Stack technique
 
@@ -32,7 +32,9 @@ Plateforme de blog permettant aux utilisateurs de créer, consulter, modifier et
 - Python 3.13
 - FastAPI
 - SQLAlchemy 2.0 (mode asynchrone) + aiosqlite
-- Pydantic v2 (validation et sérialisation des données)
+- Pydantic v2 + pydantic-settings (validation, sérialisation, configuration)
+- pwdlib[argon2] (hashage des mots de passe)
+- PyJWT (authentification par token JWT)
 - Jinja2 (rendu HTML côté serveur)
 - [uv](https://docs.astral.sh/uv/) (gestion des dépendances et environnement virtuel)
 
@@ -50,27 +52,31 @@ Plateforme de blog permettant aux utilisateurs de créer, consulter, modifier et
 fastapi_blog/
 ├── backend/
 │   ├── routes/
-│   │   ├── posts.py          ← Endpoints API + pages HTML des articles
-│   │   ├── users.py          ← Endpoints API + pages HTML des utilisateurs
+│   │   ├── posts.py          ← Endpoints API articles
+│   │   ├── users.py          ← Endpoints API utilisateurs + auth (login, /me)
 │   │   └── __init__.py
 │   ├── static/
-│   │   ├── css/
-│   │   │   └── main.css
+│   │   ├── css/main.css
 │   │   ├── js/
+│   │   │   ├── auth.js       ← Gestion de l'état d'authentification (JS)
 │   │   │   └── utils.js
 │   │   └── icons/
 │   ├── media/
 │   │   └── profile_pics/     ← Photos de profil uploadées (ignorées par Git)
 │   ├── templates/
-│   │   ├── layout.html       ← Template de base (héritage Jinja2)
+│   │   ├── layout.html       ← Template de base (navbar, modals globaux)
 │   │   ├── home.html
 │   │   ├── post.html
 │   │   ├── user_posts.html
+│   │   ├── login.html
+│   │   ├── register.html
 │   │   └── error.html
 │   ├── main.py               ← Application FastAPI, lifespan, error handlers
 │   ├── database.py           ← Configuration SQLAlchemy async
 │   ├── models.py             ← Modèles ORM (User, Post)
-│   ├── schema.py             ← Schémas Pydantic (Create, Response, Update)
+│   ├── schema.py             ← Schémas Pydantic (Create, Response, Update, Token)
+│   ├── auth.py               ← Utilitaires JWT et hashage (pwdlib + PyJWT)
+│   ├── config.py             ← Configuration via pydantic-settings (.env)
 │   ├── test_main.py          ← Tests automatisés (pytest)
 │   ├── pytest.ini
 │   └── pyproject.toml
@@ -113,6 +119,9 @@ Crée un fichier `.env` dans `backend/` (inspire-toi de `.env.example`) :
 
 ```
 DATABASE_URL=sqlite+aiosqlite:///./blog.db
+SECRET_KEY=change_this_to_a_long_random_secret
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
 
 Crée un fichier `.env` dans `frontend/` :
@@ -141,6 +150,23 @@ L'application sera disponible sur `http://localhost:5173`
 
 ## Endpoints de l'API
 
+### Authentification
+
+| Méthode | Endpoint          | Description                              |
+|---------|-------------------|------------------------------------------|
+| `POST`  | `/api/users/token`| Connexion — retourne un token JWT        |
+| `GET`   | `/api/users/me`   | Récupère l'utilisateur connecté          |
+
+### Utilisateurs (Users)
+
+| Méthode  | Endpoint                | Description                           |
+|----------|-------------------------|---------------------------------------|
+| `POST`   | `/api/users`            | Créer un compte (inscription)         |
+| `GET`    | `/api/users/{id}`       | Profil public d'un utilisateur        |
+| `PUT`    | `/api/users/{id}`       | Mise à jour d'un utilisateur          |
+| `DELETE` | `/api/users/{id}`       | Supprimer un utilisateur              |
+| `GET`    | `/api/users/{id}/posts` | Articles d'un utilisateur             |
+
 ### Articles (Posts)
 
 | Méthode  | Endpoint           | Description                        |
@@ -152,16 +178,6 @@ L'application sera disponible sur `http://localhost:5173`
 | `PATCH`  | `/api/posts/{id}`  | Mise à jour partielle d'un article |
 | `DELETE` | `/api/posts/{id}`  | Supprimer un article               |
 
-### Utilisateurs (Users)
-
-| Méthode  | Endpoint                | Description                           |
-|----------|-------------------------|---------------------------------------|
-| `POST`   | `/api/users`            | Créer un nouvel utilisateur           |
-| `GET`    | `/api/users/{id}`       | Récupérer un utilisateur par son ID   |
-| `PUT`    | `/api/users/{id}`       | Mise à jour complète d'un utilisateur |
-| `DELETE` | `/api/users/{id}`       | Supprimer un utilisateur              |
-| `GET`    | `/api/users/{id}/posts` | Lister les articles d'un utilisateur  |
-
 ### Pages HTML
 
 | Route                | Description                         |
@@ -170,6 +186,8 @@ L'application sera disponible sur `http://localhost:5173`
 | `/posts`             | Alias de la page d'accueil          |
 | `/posts/{id}`        | Page de détail d'un article         |
 | `/users/{id}/posts`  | Articles d'un utilisateur           |
+| `/login`             | Page de connexion                   |
+| `/register`          | Page d'inscription                  |
 
 ## Documentation interactive
 
@@ -192,15 +210,19 @@ pytest test_main.py -v
 - [x] Structure du projet (backend + frontend)
 - [x] Rendu HTML avec Jinja2 et fichiers statiques
 - [x] Mode asynchrone (SQLAlchemy async + aiosqlite)
-- [x] Schémas Pydantic v2 (validation et sérialisation)
+- [x] Schémas Pydantic v2 (UserPublic / UserPrivate / Token)
+- [x] Configuration centralisée (pydantic-settings)
 - [x] CRUD complet — Articles (GET, POST, PUT, PATCH, DELETE)
 - [x] CRUD complet — Utilisateurs (GET, POST, PUT, DELETE)
 - [x] Découpage en routers (routes/posts.py, routes/users.py)
+- [x] Hashage des mots de passe (pwdlib + argon2)
+- [x] Authentification JWT (PyJWT — login, token, /me)
+- [x] Pages login et register (HTML + Jinja2)
+- [x] Gestion de l'état d'authentification côté navigateur (JS)
 - [x] Gestion globale des erreurs (HTML et API)
 - [x] Tests automatisés (pytest-asyncio + httpx)
-- [ ] Hashage des mots de passe (passlib + bcrypt)
-- [ ] Authentification JWT
-- [ ] Protection des routes (get_current_user)
+- [ ] Protection des routes (get_current_user sur POST/PUT/DELETE)
+- [ ] Liaison user connecté → création de post (supprimer user_id hardcodé)
 - [ ] Gestion des commentaires
 - [ ] Upload d'images pour les articles
 - [ ] Pagination et recherche
