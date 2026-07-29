@@ -37,7 +37,7 @@ class PostBase(BaseModel):
     
 # Create class for creating a new post
 class PostCreate(PostBase):
-    user_id: int # for testing 
+    pass
     
 # Update class for updating an existing post
 class PostUpdate(BaseModel):

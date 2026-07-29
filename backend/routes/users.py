@@ -10,10 +10,9 @@ from datetime import timedelta
 from fastapi.security import OAuth2PasswordRequestForm
 from auth import (
     create_access_token,
+    CurrentUser,
     hash_password,
-    oauth2_scheme,
-    verify_password,
-    verify_access_token
+    verify_password
 )
 from config import settings
 
@@ -100,41 +99,9 @@ async def login_for_access_token(
 
 
 @router.get("/me", response_model=UserPrivate)
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
+async def get_current_user(current_user:CurrentUser):
     """Get the currently authenticated user from the JWT token."""
-    user_id = verify_access_token(token)
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Validate that user_id is a valid integer (defense against malformed JWT)
-    try:
-        user_id_int = int(user_id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    result = await db.execute(
-        select(models.User).where(models.User.id == user_id_int),
-    )
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
-
+    return current_user
 
 @router.get("/{user_id}", response_model=UserPublic)
 async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
@@ -153,72 +120,86 @@ async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
     )
 
 
-@router.put("/{user_id}", response_model=UserPrivate)
-async def update_user(user_id: int, user_data: UserUpdate, db: Annotated[AsyncSession, Depends(get_db)]):
-    """
-    Update a user after verifying uniqueness of the new username and/or email (if changed).
-    """
-    # Check that the user exists
+@router.patch("/{user_id}", response_model=UserPrivate)
+async def update_user(
+    user_id: int,
+    user_update: UserUpdate,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this user",
+        )
+
     result = await db.execute(select(models.User).where(models.User.id == user_id))
-    db_user = result.scalars().first()
-    if not db_user:
+    user = result.scalars().first()
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail="User not found",
         )
-
-    # Check uniqueness of the new email (only if it has changed)
-    if user_data.email != db_user.email:
-        email_result = await db.execute(
-            select(models.User)
-            .where(func.lower(models.User.email) == user_data.email.lower())
+    if (
+        user_update.username is not None
+        and user_update.username.lower() != user.username.lower()
+    ):
+        result = await db.execute(
+            select(models.User).where(
+                func.lower(models.User.username) == user_update.username.lower(),
+            ),
         )
-        existing_email = email_result.scalars().first()
-
-        # Another user already has this email -> 400 Bad Request
+        existing_user = result.scalars().first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists",
+            )
+    if (
+        user_update.email is not None
+        and user_update.email.lower() != user.email.lower()
+    ):
+        result = await db.execute(
+            select(models.User).where(
+                func.lower(models.User.email) == user_update.email.lower(),
+            ),
+        )
+        existing_email = result.scalars().first()
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already exists."
+                detail="Email already registered",
             )
 
-    # Check uniqueness of the new username (only if it has changed)
-    if user_data.username != db_user.username:
-        username_result = await db.execute(
-            select(models.User)
-            .where(func.lower(models.User.username) == user_data.username.lower())
-        )
-        existing_username = username_result.scalars().first()
-
-        # Another user already has this username -> 400 Bad Request
-        if existing_username:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already exists."
-            )
-
-    # Apply only the fields that were provided in the request
-    update_data = user_data.model_dump(exclude_unset=True)
-
-    if "username" in update_data and update_data["username"] is not None:
-        db_user.username = update_data["username"]
-
-    if "email" in update_data and update_data["email"] is not None:
-        db_user.email = update_data["email"]
-
-    if "image_file" in update_data and update_data["image_file"] is not None:
-        db_user.image_file = update_data["image_file"]
+    if user_update.username is not None:
+        user.username = user_update.username
+    if user_update.email is not None:
+        user.email = user_update.email.lower()
+    if user_update.image_file is not None:
+        user.image_file = user_update.image_file
 
     await db.commit()
-    await db.refresh(db_user)
-    return db_user
+    await db.refresh(user)
+    return user
 
 
 @router.get("/{user_id}/posts", response_model=list[PostResponse])
-async def get_user_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+async def get_user_posts(
+    user_id: int, 
+    current_user:CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)]
+    ):
     """
     Retrieve all posts belonging to a given user, ordered by most recent first.
     """
+    
+    # Verify if is the same user 
+    if user_id != current_user.email:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not authorized to delete this user"
+        )
+        
     # Ensure the user exists
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
