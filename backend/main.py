@@ -1,3 +1,12 @@
+"""
+FastAPI Application Entry Point
+
+This module initializes the FastAPI application, configures static file serving,
+template rendering, database lifecycle management, and includes all route routers.
+It also defines HTML page routes (home, post detail, user posts, login, register, account)
+and global exception handlers for both API and HTML responses.
+"""
+
 from fastapi import FastAPI, HTTPException, Request, status, Depends
 from contextlib import asynccontextmanager
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
@@ -13,45 +22,85 @@ from database import get_db, engine, Base
 import models
 from routes import users, posts
 
-# -----------------------------------------------------------------------------
-# APPLICATION CONFIGURATION AND INITIALIZATION
-# -----------------------------------------------------------------------------
+# =============================================================================
+# APPLICATION LIFECYCLE MANAGEMENT
+# =============================================================================
 
-# Initialize the database on startup and dispose the engine on shutdown
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Startup
+    """
+    Context manager for application startup and shutdown events.
+
+    Startup:
+        Creates all database tables if they do not already exist.
+    Shutdown:
+        Disposes the database connection pool to release resources cleanly.
+
+    Args:
+        _app (FastAPI): The FastAPI application instance (unused but required).
+
+    Yields:
+        None
+    """
+    # --- Startup ---
     async with engine.begin() as conn:
+        # Create tables based on SQLAlchemy models
         await conn.run_sync(Base.metadata.create_all)
     yield
-    # Shutdown
+    # --- Shutdown ---
     await engine.dispose()
+
+
+# =============================================================================
+# FASTAPI APPLICATION INSTANCE
+# =============================================================================
 
 app = FastAPI(lifespan=lifespan)
 
-# Mount static and media files
+# --- Static Files ---
+# Mount directories for serving CSS, JavaScript, images, and user-uploaded media
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
-# Configure the HTML template engine
+# --- Template Engine ---
+# Configure Jinja2 to render HTML templates from the 'templates' folder
 templates = Jinja2Templates(directory="templates")
 
 
 # =============================================================================
 # ROUTER INCLUSION
 # =============================================================================
+
+# Include API routers with their respective prefixes and tags
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(posts.router, prefix="/api/posts", tags=["posts"])
 
+
+# =============================================================================
+# HTML PAGE ROUTES
+# =============================================================================
 
 @app.get("/", include_in_schema=False, name="home")
 @app.get("/posts", include_in_schema=False, name="posts")
 async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
     """
-    HTML: Home page listing all published articles from newest to oldest.
+    Home page displaying all posts ordered by most recent first.
+
+    This route serves the main landing page and the /posts endpoint.
+    Posts include their author relationship via eager loading.
+
+    Args:
+        request (Request): The HTTP request object.
+        db (AsyncSession): The database session (injected).
+
+    Returns:
+        TemplateResponse: Rendered home.html with the list of posts.
     """
+    # Fetch all posts with authors, ordered by date (newest first)
     result = await db.execute(
-        select(models.Post).options(selectinload(models.Post.author)).order_by(models.Post.date_posted.desc())
+        select(models.Post)
+        .options(selectinload(models.Post.author))
+        .order_by(models.Post.date_posted.desc())
     )
     all_posts = result.scalars().all()
     return templates.TemplateResponse(
@@ -64,15 +113,29 @@ async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
 @app.get("/posts/{post_id}", include_in_schema=False)
 async def post_page(request: Request, post_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
     """
-    HTML: Detail page for a specific article identified by its ID.
+    Detail page for a single post, identified by its ID.
+
+    Args:
+        request (Request): The HTTP request object.
+        post_id (int): The ID of the post to display.
+        db (AsyncSession): The database session (injected).
+
+    Returns:
+        TemplateResponse: Rendered post.html with the post data.
+
+    Raises:
+        HTTPException 404: If no post exists with the given ID.
     """
+    # Fetch the post with its author relationship
     result = await db.execute(
-        select(models.Post).options(selectinload(models.Post.author)).where(models.Post.id == post_id)
+        select(models.Post)
+        .options(selectinload(models.Post.author))
+        .where(models.Post.id == post_id)
     )
     post = result.scalars().first()
 
     if post:
-        title = post.title[:50]
+        title = post.title[:50]  # Truncate for <title> tag
         return templates.TemplateResponse(
             request,
             "post.html",
@@ -88,8 +151,20 @@ async def user_posts_page(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
-    HTML: Page listing all articles written by a specific user.
+    Page displaying all posts written by a specific user.
+
+    Args:
+        request (Request): The HTTP request object.
+        user_id (int): The ID of the user whose posts are to be shown.
+        db (AsyncSession): The database session (injected).
+
+    Returns:
+        TemplateResponse: Rendered user_posts.html with the user and their posts.
+
+    Raises:
+        HTTPException 404: If the user does not exist.
     """
+    # Fetch the user first to ensure they exist
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
     if not user:
@@ -97,6 +172,8 @@ async def user_posts_page(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    # Fetch the user's posts with author relationship, ordered by date
     result = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
@@ -110,12 +187,22 @@ async def user_posts_page(
         {"posts": posts, "user": user, "title": f"{user.username}'s Posts"},
     )
 
+
 # =============================================================================
-# LOGIN AND REGISTER TEMPLATE ROUTES 
+# AUTHENTICATION PAGES (LOGIN, REGISTER, ACCOUNT)
 # =============================================================================
 
 @app.get("/login", include_in_schema=False)
 async def login_page(request: Request):
+    """
+    Login page – serves the login form.
+
+    Args:
+        request (Request): The HTTP request object.
+
+    Returns:
+        TemplateResponse: Rendered login.html.
+    """
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -125,11 +212,39 @@ async def login_page(request: Request):
 
 @app.get("/register", include_in_schema=False)
 async def register_page(request: Request):
+    """
+    Registration page – serves the sign-up form.
+
+    Args:
+        request (Request): The HTTP request object.
+
+    Returns:
+        TemplateResponse: Rendered register.html.
+    """
     return templates.TemplateResponse(
         request,
         "register.html",
         {"title": "Register"},
     )
+
+
+@app.get("/account", include_in_schema=False)
+async def account_page(request: Request):
+    """
+    Account settings page – displays user profile management interface.
+
+    Args:
+        request (Request): The HTTP request object.
+
+    Returns:
+        TemplateResponse: Rendered account.html.
+    """
+    return templates.TemplateResponse(
+        request,
+        "account.html",
+        {"title": "Account"},
+    )
+
 
 # =============================================================================
 # GLOBAL ERROR HANDLERS
@@ -138,12 +253,23 @@ async def register_page(request: Request):
 @app.exception_handler(StarletteHTTPException)
 async def general_http_exception_handler(request: Request, exception: StarletteHTTPException):
     """
-    Catches generic HTTP errors.
-    Returns JSON for API routes, and an HTML error page for all other routes.
+    Handles generic HTTP exceptions (e.g., 404, 500).
+
+    For API routes (starting with /api), returns a JSON response using the
+    default FastAPI handler. For HTML routes, renders a custom error page.
+
+    Args:
+        request (Request): The HTTP request that triggered the exception.
+        exception (StarletteHTTPException): The caught exception.
+
+    Returns:
+        Response: JSON error for API routes, or HTML template response for others.
     """
+    # API routes return JSON error responses
     if request.url.path.startswith("/api"):
         return await http_exception_handler(request, exception)
 
+    # HTML routes render a user-friendly error page
     message = (
         exception.detail
         if exception.detail
@@ -165,12 +291,23 @@ async def general_http_exception_handler(request: Request, exception: StarletteH
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exception: RequestValidationError):
     """
-    Catches Pydantic schema validation errors.
-    Returns validation details for the API, or a generic HTML error page for other routes.
+    Handles Pydantic validation errors (e.g., malformed request bodies).
+
+    For API routes, returns a JSON error with validation details.
+    For HTML routes, renders a generic error page.
+
+    Args:
+        request (Request): The HTTP request that triggered the exception.
+        exception (RequestValidationError): The validation error details.
+
+    Returns:
+        Response: JSON validation errors for API, or HTML error page for others.
     """
+    # API routes return structured validation error details
     if request.url.path.startswith("/api"):
         return await request_validation_exception_handler(request, exception)
 
+    # HTML routes show a simple error message
     return templates.TemplateResponse(
         request,
         "error.html",

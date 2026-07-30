@@ -16,18 +16,34 @@ from auth import (
 )
 from config import settings
 
+# =============================================================================
+# ROUTER INSTANCE
+# =============================================================================
 router = APIRouter()
 
 # =============================================================================
-# ROUTERS & ENDPOINTS: USERS
+# ENDPOINTS: USER MANAGEMENT
 # =============================================================================
 
 @router.post("", response_model=UserPrivate, status_code=status.HTTP_201_CREATED)
 async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
     """
-    Create a new user after verifying that the username and email are unique.
+    Create a new user account.
+
+    Validates that the username and email are unique (case-insensitive),
+    hashes the password, and stores the user in the database.
+
+    Args:
+        user (UserCreate): The user data (username, email, password).
+        db (AsyncSession): The database session.
+
+    Returns:
+        UserPrivate: The created user object (with password hash excluded).
+
+    Raises:
+        HTTPException 400: If the username or email is already taken.
     """
-    # Check if username already exists (case-insensitive)
+    # --- Check for duplicate username (case-insensitive) ---
     result = await db.execute(
         select(models.User).
         where(func.lower(models.User.username) == user.username.lower())
@@ -39,7 +55,7 @@ async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_
             detail="Username already exists"
         )
 
-    # Check if email already exists (case-insensitive)
+    # --- Check for duplicate email (case-insensitive) ---
     result = await db.execute(
         select(models.User)
         .where(func.lower(models.User.email) == user.email.lower())
@@ -51,7 +67,7 @@ async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_
             detail="Email already exists"
         )
 
-    # Create and persist the new user
+    # --- Create and persist the new user ---
     new_user = models.User(
         username=user.username,
         email=user.email.lower(),
@@ -69,10 +85,24 @@ async def login_for_access_token(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
-    Authenticate a user and return a JWT access token.
-    Note: OAuth2PasswordRequestForm uses the "username" field, but we treat it as email.
+    Authenticate a user and issue a JWT access token.
+
+    Note: OAuth2PasswordRequestForm uses the "username" field,
+    but this endpoint treats it as the user's email address.
+
+    Args:
+        form_data (OAuth2PasswordRequestForm): The OAuth2 form containing
+            "username" (email) and "password".
+        db (AsyncSession): The database session.
+
+    Returns:
+        Token: An object containing the access token and token type.
+
+    Raises:
+        HTTPException 401: If the email or password is incorrect (generic message
+            for security reasons).
     """
-    # Look up user by email (case-insensitive)
+    # --- Look up user by email (case-insensitive) ---
     result = await db.execute(
         select(models.User).where(
             func.lower(models.User.email) == form_data.username.lower(),
@@ -80,7 +110,7 @@ async def login_for_access_token(
     )
     user = result.scalars().first()
 
-    # Verify user exists and password is correct
+    # --- Verify user existence and password validity ---
     # Do not reveal which check failed (security best practice)
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
@@ -89,7 +119,7 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Create access token with user id as subject
+    # --- Create access token with user ID as subject ---
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         data={"sub": str(user.id)},
@@ -99,14 +129,39 @@ async def login_for_access_token(
 
 
 @router.get("/me", response_model=UserPrivate)
-async def get_current_user(current_user:CurrentUser):
-    """Get the currently authenticated user from the JWT token."""
+async def get_current_user(current_user: CurrentUser):
+    """
+    Retrieve the currently authenticated user's full profile.
+
+    This endpoint uses the injected `CurrentUser` dependency, which validates
+    the JWT token and returns the user object.
+
+    Args:
+        current_user (User): The authenticated user (injected).
+
+    Returns:
+        UserPrivate: The user's private data (including email and image).
+    """
     return current_user
+
 
 @router.get("/{user_id}", response_model=UserPublic)
 async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
     """
-    Retrieve public information for a user by their ID.
+    Retrieve public information about a user by their ID.
+
+    This endpoint does not require authentication and only exposes
+    public fields (username, image, etc.).
+
+    Args:
+        user_id (int): The ID of the user to retrieve.
+        db (AsyncSession): The database session.
+
+    Returns:
+        UserPublic: The user's public data.
+
+    Raises:
+        HTTPException 404: If no user exists with the given ID.
     """
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
@@ -127,12 +182,34 @@ async def update_user(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    """
+    Update a user's own profile.
+
+    Only the authenticated user can update their own information.
+    Ensures that the new username/email, if provided, are unique.
+
+    Args:
+        user_id (int): The ID of the user to update.
+        user_update (UserUpdate): The fields to update (username, email, image_file).
+        current_user (User): The authenticated user (injected).
+        db (AsyncSession): The database session.
+
+    Returns:
+        UserPrivate: The updated user object.
+
+    Raises:
+        HTTPException 403: If the authenticated user does not match the requested user_id.
+        HTTPException 404: If the user does not exist.
+        HTTPException 400: If the new username or email is already taken.
+    """
+    # --- Ensure the user can only update their own profile ---
     if user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this user",
         )
 
+    # --- Fetch the user from the database ---
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
     if not user:
@@ -140,6 +217,8 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    # --- Validate username uniqueness if changing ---
     if (
         user_update.username is not None
         and user_update.username.lower() != user.username.lower()
@@ -155,6 +234,8 @@ async def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already exists",
             )
+
+    # --- Validate email uniqueness if changing ---
     if (
         user_update.email is not None
         and user_update.email.lower() != user.email.lower()
@@ -171,6 +252,7 @@ async def update_user(
                 detail="Email already registered",
             )
 
+    # --- Apply updates selectively ---
     if user_update.username is not None:
         user.username = user_update.username
     if user_update.email is not None:
@@ -185,22 +267,36 @@ async def update_user(
 
 @router.get("/{user_id}/posts", response_model=list[PostResponse])
 async def get_user_posts(
-    user_id: int, 
-    current_user:CurrentUser,
+    user_id: int,
+    current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)]
-    ):
+):
     """
-    Retrieve all posts belonging to a given user, ordered by most recent first.
+    Retrieve all posts written by a specific user.
+
+    Only the authenticated user can access their own posts.
+    Posts are ordered by most recent first.
+
+    Args:
+        user_id (int): The ID of the user whose posts are requested.
+        current_user (User): The authenticated user (injected).
+        db (AsyncSession): The database session.
+
+    Returns:
+        list[PostResponse]: A list of the user's posts, including author details.
+
+    Raises:
+        HTTPException 404: If the user does not exist or if the authenticated user
+            is not the owner (kept as 404 for security).
     """
-    
-    # Verify if is the same user 
-    if user_id != current_user.email:
+    # --- Verify that the authenticated user matches the requested user_id ---
+    if user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Not authorized to delete this user"
         )
-        
-    # Ensure the user exists
+
+    # --- Check that the user exists ---
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
 
@@ -210,7 +306,7 @@ async def get_user_posts(
             detail="User not found"
         )
 
-    # Fetch posts with their author relationship eagerly loaded
+    # --- Fetch posts with author relationship eagerly loaded to avoid N+1 queries ---
     result = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
@@ -222,10 +318,34 @@ async def get_user_posts(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+async def delete_user(
+    user_id: int,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
     """
-    Delete a user and all of their associated posts from the database.
+    Delete a user and all of their associated posts.
+
+    Only the authenticated user can delete their own account.
+    This operation is irreversible and cascades to all posts.
+
+    Args:
+        user_id (int): The ID of the user to delete.
+        current_user (User): The authenticated user (injected).
+        db (AsyncSession): The database session.
+
+    Raises:
+        HTTPException 403: If the authenticated user is not the owner.
+        HTTPException 404: If the user does not exist.
     """
+    # --- Ensure the user is deleting their own account ---
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this user"
+        )
+
+    # --- Fetch the user ---
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
 
@@ -235,5 +355,6 @@ async def delete_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]
             detail="User not found"
         )
 
+    # --- Delete the user (cascade will remove related posts) ---
     await db.delete(user)
     await db.commit()
