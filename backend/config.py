@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     # and map them to the class attributes defined below.
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_file_encoding="utf-8"
+        env_file_encoding="utf-8",
+        extra="ignore"  # Ignore les variables d'environnement en trop si présent
     )
 
     # --- JWT Security Settings ---
@@ -40,6 +41,9 @@ class Settings(BaseSettings):
 
     access_token_expire_minutes: int = 30
     """Token expiration time in minutes. Defaults to 30 minutes."""
+    
+    # --- Database Settings ---
+    database_url: str = "sqlite+aiosqlite:///./blog.db"
 
 
 # --- Singleton instance for use across the application ---
