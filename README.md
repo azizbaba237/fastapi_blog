@@ -42,6 +42,10 @@ Plateforme de blog permettant aux utilisateurs de s'inscrire, se connecter, et c
 - React (Vite)
 - JavaScript / JSX
 
+**Hébergement & Base de données**
+- Render (Web Service)
+- Render PostgreSQL (Base de données managée)
+
 **Tests**
 - pytest + pytest-asyncio
 - httpx (AsyncClient)
@@ -120,6 +124,15 @@ Crée un fichier `.env` dans `backend/` (inspire-toi de `.env.example`) :
 ```
 DATABASE_URL=sqlite+aiosqlite:///./blog.db
 SECRET_KEY=change_this_to_a_long_random_secret
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+```
+
+## Production (Render + PostgreSQL) 
+
+```
+DATABASE_URL=postgresql+asyncpg://user:password@host/dbname
+SECRET_KEY=votre_cle_secrete_tres_securisee
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
@@ -221,13 +234,13 @@ pytest test_main.py -v
 - [x] Gestion de l'état d'authentification côté navigateur (JS)
 - [x] Gestion globale des erreurs (HTML et API)
 - [x] Tests automatisés (pytest-asyncio + httpx)
-- [ ] Protection des routes (get_current_user sur POST/PUT/DELETE)
-- [ ] Liaison user connecté → création de post (supprimer user_id hardcodé)
+- [x] Déploiement en production (Render + PostgreSQL)
+- [x] Protection des routes (get_current_user sur POST/PUT/DELETE)
+- [x] Liaison user connecté → création de post (supprimer user_id hardcodé)
 - [ ] Gestion des commentaires
 - [ ] Upload d'images pour les articles
 - [ ] Pagination et recherche
 - [ ] Connexion avec le frontend React
-- [ ] Déploiement
 
 ## Auteur
 
