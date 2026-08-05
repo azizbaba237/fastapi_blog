@@ -1,14 +1,12 @@
-Here is the exact same code, but with **all comments translated into English**
-for a professional, international-standard codebase. ```html
 {% extends "layout.html" %}
 
 {% block content %}
-  <!--
+  {# 
     Post detail page.
     The data-post-id and data-user-id attributes allow JavaScript
     to retrieve the IDs without using {{ }} syntax in the script,
     preventing linter errors.
-  -->
+  #}
   <article
     class="content-section py-3 px-4 mb-4"
     data-post-id="{{ post.id }}"
@@ -40,11 +38,11 @@ for a professional, international-standard codebase. ```html
         <h2 class="article-title">{{ post.title }}</h2>
         <p class="article-content">{{ post.content }}</p>
 
-        <!--
+        {# 
           Action buttons area (edit/delete).
           Displayed only if the logged-in user is the post owner.
           The 'd-none' class is removed dynamically by JavaScript.
-        -->
+        #}
         <div id="postActions" class="post-actions mt-3 pt-3 border-top d-none">
           <button
             type="button"
@@ -68,7 +66,7 @@ for a professional, international-standard codebase. ```html
   </article>
 
   <!-- ============================================================ -->
-  <!-- MODAL: Edit post                                              -->
+  <!-- MODAL: Edit post                                             -->
   <!-- ============================================================ -->
   <div
     class="modal fade"
@@ -112,8 +110,7 @@ for a professional, international-standard codebase. ```html
                 name="content"
                 rows="5"
                 required
-              >
-{{ post.content }}</textarea>
+              >{{ post.content }}</textarea>
             </div>
           </div>
           <div class="modal-footer">
@@ -132,7 +129,7 @@ for a professional, international-standard codebase. ```html
   </div>
 
   <!-- ============================================================ -->
-  <!-- MODAL: Delete confirmation                                    -->
+  <!-- MODAL: Delete confirmation                                   -->
   <!-- ============================================================ -->
   <div
     class="modal fade"
@@ -329,4 +326,3 @@ for a professional, international-standard codebase. ```html
     checkOwnership();
   </script>
 {% endblock scripts %}
-```
