@@ -4,26 +4,28 @@ from config import settings
 
 db_url = settings.database_url
 
-# Correction du préfixe fourni par Render pour asyncpg
+# Fix Render's URL prefix for asyncpg
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
 elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# SQLite a besoin de check_same_thread=False, mais PAS PostgreSQL
-connect_args = {}
+# SQLite needs check_same_thread=False
+# PostgreSQL on Render needs SSL
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+else:
+    connect_args = {"ssl": "require"} 
 
 engine = create_async_engine(
-    db_url, 
-    connect_args=connect_args
+    db_url,
+    connect_args=connect_args,
 )
 
 AsyncSessionLocal = async_sessionmaker(
-    engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False,    
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
 )
 
 class Base(DeclarativeBase):
