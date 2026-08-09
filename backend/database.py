@@ -1,7 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from config import settings
-import logging 
 
 db_url = settings.database_url
 
@@ -10,9 +9,6 @@ if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
 elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    
-    
-logging.warning(f">>> DB UTILISÉE : {db_url.split('@')[-1] if '@' in db_url else db_url}")
 
 
 # SQLite needs check_same_thread=False
