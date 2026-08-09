@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     
     # --- Database Settings ---
     database_url: str = "sqlite+aiosqlite:///./blog.db"
+    
+    # --- File Upload Settings ---
+    max_upload_size_bytes: int  = 5 * 1024 * 1024  # 5 MB
 
 
 # --- Singleton instance for use across the application ---
