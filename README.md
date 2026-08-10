@@ -34,6 +34,8 @@ Plateforme de blog permettant aux utilisateurs de s'inscrire, se connecter, et c
 - aiosqlite (développement local) + asyncpg (production PostgreSQL)
 - Pydantic v2 + pydantic-settings (validation, sérialisation, configuration)
 - pwdlib[argon2] (hashage des mots de passe)
+- Pillow (traitement des images)
+- Cloudinary (stockage des photos de profil)
 - PyJWT (authentification par token JWT)
 - Jinja2 (rendu HTML côté serveur)
 - [uv](https://docs.astral.sh/uv/) (gestion des dépendances et environnement virtuel)
@@ -143,6 +145,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 > ```bash
 > python -c "import secrets; print(secrets.token_hex(32))"
 > ```
+
+Crée un fichier `.env` dans `frontend/` :
+
+```
+CLOUDINARY_CLOUD_NAME=ton_cloud_name
+CLOUDINARY_API_KEY=ta_cle_api
+CLOUDINARY_API_SECRET=ton_secret_api
 
 Crée un fichier `.env` dans `frontend/` :
 
@@ -276,7 +285,8 @@ git push
 - [x] Gestion globale des erreurs (HTML et API)
 - [x] Tests automatisés (pytest-asyncio + httpx)
 - [x] Déploiement backend en production (Render + PostgreSQL)
-- [ ] Gestion des commentaires
+- [x] Gestion des commentaires
+- [x] Upload de photo de profil (Cloudinary)
 - [ ] Upload d'images pour les articles
 - [ ] Pagination et recherche
 - [ ] Connexion avec le frontend React
