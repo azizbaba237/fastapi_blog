@@ -13,7 +13,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
     image_file: Mapped[str | None] = mapped_column(
-        String(20), 
+        String(500), 
         nullable=True, 
         default=None
     )
@@ -23,7 +23,7 @@ class User(Base):
     @property
     def image_path(self) -> str:
         if self.image_file:
-            return f"/media/profile_pics/{self.image_file}"
+            return self.image_file
         return "/static/profile_pics/default.jpg" 
     
 class Post(Base):
