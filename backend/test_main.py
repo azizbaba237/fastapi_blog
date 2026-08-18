@@ -3,6 +3,9 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from main import app
 from database import get_db, Base
+import io
+from unittest.mock import patch, MagicMock
+
 
 # =============================================================================
 # TEST DATABASE SETUP
@@ -561,5 +564,132 @@ async def test_account_page_loads(client):
     response = await client.get("/account")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
+    
+    
+# =============================================================================
+# PROFILE PICTURE TESTS
+# =============================================================================
+
+# This is a minimal valid 1x1 JPEG image in bytes
+# Used to simulate a real image file without needing an actual file on disk
+FAKE_JPEG = (
+    b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
+    b'\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t'
+    b'\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a'
+    b'\x1f\x1e\x1d\x1a\x1c\x1c $.\' ",#\x1c\x1c(7),01444\x1f\'9=82<.342\x1e'
+    b'\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b'
+    b'\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b\x1b'
+    b'\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00'
+    b'\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00'
+    b'\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00'
+    b'\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00'
+    b'\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142\x81'
+    b'\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18\x19'
+    b'\x1a%&\'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85\x86'
+    b'\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4'
+    b'\xa5\xa6\xa7\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2'
+    b'\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9'
+    b'\xda\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xf1\xf2\xf3\xf4\xf5'
+    b'\xf6\xf7\xf8\xf9\xfa\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb'
+    b'\xd4P\x00\x00\x00\x1f\xff\xd9'
+)
+
+
+async def test_upload_photo_de_profil(client, utilisateur, auth_headers):
+    """
+    Uploading a profile picture must call Cloudinary and store the returned URL.
+    
+    We mock cloudinary.uploader.upload to avoid real network calls.
+    The mock returns a fake URL as Cloudinary would.
+    """
+    fake_cloudinary_url = "https://res.cloudinary.com/test/image/upload/v123/fastapi_blog/profile_pics/abc.jpg"
+
+    # patch() temporarily replaces the real Cloudinary upload with our fake one
+    with patch("image_utils.cloudinary.uploader.upload") as mock_upload:
+        mock_upload.return_value = {"secure_url": fake_cloudinary_url}
+
+        response = await client.patch(
+            f"/api/users/{utilisateur['id']}/picture",
+            headers=auth_headers,
+            files={"file": ("photo.jpg", io.BytesIO(FAKE_JPEG), "image/jpeg")},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    # The image_path must now be the Cloudinary URL, not a local path
+    assert data["image_path"] == fake_cloudinary_url
+    # Cloudinary upload must have been called exactly once
+    mock_upload.assert_called_once()
+
+
+async def test_upload_photo_sans_auth(client, utilisateur):
+    """Uploading a picture without a token must return 401."""
+    response = await client.patch(
+        f"/api/users/{utilisateur['id']}/picture",
+        files={"file": ("photo.jpg", io.BytesIO(FAKE_JPEG), "image/jpeg")},
+    )
+    assert response.status_code == 401
+
+
+async def test_upload_photo_autre_utilisateur(client, utilisateur, autre_auth_headers):
+    """A user cannot upload a picture on another user's account (403)."""
+    response = await client.patch(
+        f"/api/users/{utilisateur['id']}/picture",
+        headers=autre_auth_headers,
+        files={"file": ("photo.jpg", io.BytesIO(FAKE_JPEG), "image/jpeg")},
+    )
+    assert response.status_code == 403
+
+
+async def test_upload_fichier_invalide(client, utilisateur, auth_headers):
+    """Uploading a non-image file must return 400."""
+    fake_pdf = b"%PDF-1.4 fake content"
+
+    with patch("image_utils.cloudinary.uploader.upload"):
+        response = await client.patch(
+            f"/api/users/{utilisateur['id']}/picture",
+            headers=auth_headers,
+            files={"file": ("doc.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+        )
+
+    assert response.status_code == 400
+
+
+async def test_supprimer_photo_de_profil(client, utilisateur, auth_headers):
+    """
+    After uploading a picture, the user can delete it.
+    The image_path must fall back to the default picture.
+    """
+    fake_url = "https://res.cloudinary.com/test/image/upload/v123/fastapi_blog/profile_pics/abc.jpg"
+
+    # First upload a picture
+    with patch("image_utils.cloudinary.uploader.upload") as mock_upload:
+        mock_upload.return_value = {"secure_url": fake_url}
+        await client.patch(
+            f"/api/users/{utilisateur['id']}/picture",
+            headers=auth_headers,
+            files={"file": ("photo.jpg", io.BytesIO(FAKE_JPEG), "image/jpeg")},
+        )
+
+    # Then delete it
+    with patch("image_utils.cloudinary.uploader.destroy") as mock_destroy:
+        response = await client.delete(
+            f"/api/users/{utilisateur['id']}/picture",
+            headers=auth_headers,
+        )
+        mock_destroy.assert_called_once()
+
+    assert response.status_code == 200
+    # image_path must fall back to the default
+    assert response.json()["image_path"] == "/static/profile_pics/default.jpg"
+
+
+async def test_supprimer_photo_inexistante(client, utilisateur, auth_headers):
+    """Deleting a picture when none is set must return 400."""
+    response = await client.delete(
+        f"/api/users/{utilisateur['id']}/picture",
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
 
 
