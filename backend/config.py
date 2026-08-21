@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: SecretStr = SecretStr("")
+    
+    # --- Pagination Settings ---
+    post_per_page: int = 10
+    
 
 
 # --- Singleton instance for use across the application ---

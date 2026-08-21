@@ -1,10 +1,10 @@
-from fastapi import HTTPException, status, Depends, APIRouter
-from schema import PostCreate, PostUpdate, PostResponse
+from fastapi import HTTPException, status, Depends, APIRouter, Query
+from schema import PostCreate, PostUpdate, PostResponse, PaginatedPostsResponse
 from sqlalchemy.orm import selectinload
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
-from sqlalchemy import select
+from sqlalchemy import select, func
 from auth import CurrentUser
 import models
 
@@ -17,8 +17,12 @@ router = APIRouter()
 # ENDPOINTS: POST MANAGEMENT
 # =============================================================================
 
-@router.get("", response_model=list[PostResponse])
-async def get_posts(db: Annotated[AsyncSession, Depends(get_db)]):
+@router.get("", response_model=PaginatedPostsResponse)
+async def get_posts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10
+    ):
     """
     Retrieve a list of all posts on the platform.
 
@@ -31,13 +35,27 @@ async def get_posts(db: Annotated[AsyncSession, Depends(get_db)]):
     Returns:
         list[PostResponse]: A list of all posts with their authors.
     """
+    count_result = await db.execute(select(func.count()).select_from(models.Post))
+    total = count_result.scalar() or 0
+
     result = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
         .order_by(models.Post.date_posted.desc())
+        .offset(skip)
+        .limit(limit)
     )
     posts = result.scalars().all()
-    return posts
+    
+    has_more = (skip + limit) < total
+    
+    return PaginatedPostsResponse(
+        posts=[PostResponse.model_validate(post) for post in posts],
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=has_more,
+    )
 
 
 @router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)

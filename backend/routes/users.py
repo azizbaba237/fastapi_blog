@@ -1,5 +1,5 @@
-from fastapi import HTTPException, status, Depends, APIRouter, UploadFile
-from schema import UserCreate, UserUpdate, PostResponse, UserPublic, UserPrivate, Token
+from fastapi import HTTPException, status, Depends, APIRouter, UploadFile, Query, Request
+from schema import UserCreate, UserUpdate, PostResponse, UserPublic, UserPrivate, Token, PaginatedPostsResponse
 from sqlalchemy.orm import selectinload
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,9 @@ from config import settings
 from PIL import UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from image_utils import process_profile_image, delete_profile_image
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory="templates")
 
 
 # =============================================================================
@@ -82,7 +85,6 @@ async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_
     await db.refresh(new_user)
     return new_user
 
-
 @router.post("/token", response_model=Token)
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -131,7 +133,6 @@ async def login_for_access_token(
     )
     return Token(access_token=access_token, token_type="bearer")
 
-
 @router.get("/me", response_model=UserPrivate)
 async def get_current_user(current_user: CurrentUser):
     """
@@ -148,36 +149,47 @@ async def get_current_user(current_user: CurrentUser):
     """
     return current_user
 
-
-@router.get("/{user_id}", response_model=UserPublic)
-async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
-    """
-    Retrieve public information about a user by their ID.
-
-    This endpoint does not require authentication and only exposes
-    public fields (username, image, etc.).
-
-    Args:
-        user_id (int): The ID of the user to retrieve.
-        db (AsyncSession): The database session.
-
-    Returns:
-        UserPublic: The user's public data.
-
-    Raises:
-        HTTPException 404: If no user exists with the given ID.
-    """
+@router.get("/{user_id}/posts", response_model=PaginatedPostsResponse)
+async def get_user_posts(
+    user_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+):
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
 
-    if user:
-        return user
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="User not found"
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(models.Post)
+        .where(models.Post.user_id == user_id),
     )
+    total = count_result.scalar() or 0
 
+    result = await db.execute(
+        select(models.Post)
+        .options(selectinload(models.Post.author))
+        .where(models.Post.user_id == user_id)
+        .order_by(models.Post.date_posted.desc())
+        .offset(skip)
+        .limit(limit),
+    )
+    posts = result.scalars().all()
+
+    has_more = skip + len(posts) < total
+
+    return PaginatedPostsResponse(
+        posts=[PostResponse.model_validate(post) for post in posts],
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=has_more,
+    )
 
 @router.patch("/{user_id}", response_model=UserPrivate)
 async def update_user(
@@ -266,58 +278,49 @@ async def update_user(
     await db.refresh(user)
     return user
 
-
-@router.get("/{user_id}/posts", response_model=list[PostResponse])
-async def get_user_posts(
+@router.get("/users/{user_id}/posts", include_in_schema=False, name="user_posts")
+async def user_posts_page(
+    request: Request,
     user_id: int,
-    current_user: CurrentUser,
-    db: Annotated[AsyncSession, Depends(get_db)]
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """
-    Retrieve all posts written by a specific user.
-
-    Only the authenticated user can access their own posts.
-    Posts are ordered by most recent first.
-
-    Args:
-        user_id (int): The ID of the user whose posts are requested.
-        current_user (User): The authenticated user (injected).
-        db (AsyncSession): The database session.
-
-    Returns:
-        list[PostResponse]: A list of the user's posts, including author details.
-
-    Raises:
-        HTTPException 404: If the user does not exist or if the authenticated user
-            is not the owner (kept as 404 for security).
-    """
-    # --- Verify that the authenticated user matches the requested user_id ---
-    if user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Not authorized to delete this user"
-        )
-
-    # --- Check that the user exists ---
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
-
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail="User not found",
         )
 
-    # --- Fetch posts with author relationship eagerly loaded to avoid N+1 queries ---
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(models.Post)
+        .where(models.Post.user_id == user_id),
+    )
+    total = count_result.scalar() or 0
+
     result = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
         .where(models.Post.user_id == user_id)
         .order_by(models.Post.date_posted.desc())
+        .limit(settings.post_per_page),
     )
     posts = result.scalars().all()
-    return posts
 
+    has_more = len(posts) < total
+
+    return templates.TemplateResponse(
+        request,
+        "user_posts.html",
+        {
+            "posts": posts,
+            "user": user,
+            "title": f"{user.username}'s Posts",
+            "limit": settings.post_per_page,
+            "has_more": has_more,
+        },
+    )
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
@@ -367,7 +370,6 @@ async def delete_user(
     # --- Delete the user's profile picture if it exists ---
     if old_filename:
         delete_profile_image(old_filename)
-    
 
 @router.patch("/{user_id}/picture", response_model=UserPrivate)
 async def upload_profile_picture(
@@ -408,7 +410,6 @@ async def upload_profile_picture(
         delete_profile_image(old_filename)
 
     return current_user
-
 
 @router.delete("/{user_id}/picture", response_model=UserPrivate)
 async def delete_user_picture(

@@ -17,10 +17,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from typing import Annotated
-from sqlalchemy import select
+from sqlalchemy import select, func
 from database import get_db, engine, Base
 import models
 from routes import users, posts
+from config import settings
+
+
 
 # =============================================================================
 # APPLICATION LIFECYCLE MANAGEMENT
@@ -96,17 +99,29 @@ async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
     Returns:
         TemplateResponse: Rendered home.html with the list of posts.
     """
+    result_count = await db.execute(select(func.count()).select_from(models.Post))
+    total = result_count.scalar() or 0
+    
     # Fetch all posts with authors, ordered by date (newest first)
     result = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
         .order_by(models.Post.date_posted.desc())
+        .limit(settings.post_per_page)  # Limit to configured number of posts per page
     )
     all_posts = result.scalars().all()
+    
+    has_more = len(all_posts) < total  # Determine if there are more posts than displayed
+    
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"posts": all_posts, "title": "Home"},
+        {"posts": all_posts,
+         "title": "Home",
+         "limit": settings.post_per_page,
+         "has_more": has_more
+         },
+        
     )
 
 

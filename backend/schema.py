@@ -163,3 +163,24 @@ class PostResponse(PostBase):
     user_id: int
     author: UserPublic
     date_posted: datetime
+    
+    
+class PaginatedPostsResponse(BaseModel):
+    """
+    Schema for paginated post responses.
+
+    Used when returning a list of posts with pagination metadata.
+
+    Attributes:
+        total (int): Total number of posts available.
+        skip (int): Current page number.
+        limit (int): Number of posts per page.
+        has_more (bool): Indicates if there are more posts available beyond the current page.
+        posts (list[PostResponse]): List of post response objects for the current page.
+    """
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
+    posts: list[PostResponse]
+    
