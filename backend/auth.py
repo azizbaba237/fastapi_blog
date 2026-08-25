@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 import models
 import jwt
+import hashlib
+import secrets
 
 # =============================================================================
 # PASSWORD HASHING
@@ -47,6 +49,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         bool: True if the password matches the hash, False otherwise.
     """
     return password_hash.verify(plain_password, hashed_password)
+
+def generate_reset_token() -> str:
+    """
+    Generate a secure random token for password reset.
+
+    Returns:
+        str: A URL-safe, random token string.
+    """
+    return secrets.token_urlsafe(32)
+
+def hash_reset_token(token: str) -> str:
+    """
+    Hash a password reset token using SHA-256.
+
+    Args:
+        token (str): The plain-text reset token.
+
+    Returns:
+        str: The SHA-256 hash of the token as a hexadecimal string.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # =============================================================================

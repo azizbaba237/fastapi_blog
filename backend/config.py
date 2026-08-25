@@ -56,7 +56,19 @@ class Settings(BaseSettings):
     # --- Pagination Settings ---
     post_per_page: int = 10
     
-
-
+    # --- Password Reset Token Settings ---
+    reset_token_expire_minutes: int = 60  # 1 hour
+    
+    # --- Email Settings ---
+    mail_server: str= "localhost"
+    mail_port: int = 587
+    mail_username: str = ""
+    mail_password: SecretStr = SecretStr("")
+    mail_from: str = "noreply@example.com"
+    mail_use_tls: bool = True
+    
+    # --- Frontend URL Settings ---
+    frontend_url: str = "http://localhost:8000"
+    
 # --- Singleton instance for use across the application ---
-settings = Settings()
+settings = Settings() # This instance will load the configuration from the .env file and can be imported wherever needed in the application.

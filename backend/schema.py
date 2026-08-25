@@ -184,3 +184,41 @@ class PaginatedPostsResponse(BaseModel):
     has_more: bool
     posts: list[PostResponse]
     
+
+class ForgotPasswordRequest(BaseModel):
+    """
+    Schema for requesting a password reset.
+
+    Used when a user submits their email to receive a password reset link.
+
+    Attributes:
+        email (EmailStr): The user's email address. Must be valid and at most 120 characters.
+    """
+    email: EmailStr = Field(max_length=120)
+    
+class ResetPasswordRequest(BaseModel):
+    """
+    Schema for resetting a user's password.
+
+    Used when a user submits a new password along with a valid reset token.
+
+    Attributes:
+        token (str): The password reset token received via email.
+        new_password (str): The new password. Must be at least 8 characters long.
+    """
+    token: str
+    new_password: str = Field(min_length=8)
+    
+class ChangePasswordRequest(BaseModel):
+    """
+    Schema for changing a user's password.
+
+    Used when an authenticated user wants to change their password.
+
+    Attributes:
+        current_password (str): The user's current password. 
+        new_password (str): The new password. Must be at least 8 characters long.
+    """
+    current_password: str
+    new_password: str = Field(min_length=8)
+    
