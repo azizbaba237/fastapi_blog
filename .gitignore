@@ -44,3 +44,9 @@ coverage/
 # Fichiers médias uploadés par les utilisateurs
 media/profile_pics/*
 !media/profile_pics/.gitkeep
+
+
+# Fichiers et dossier de base de données pour le développement pour test
+populate_images
+populate_db.py
+populate_utils_images.py
