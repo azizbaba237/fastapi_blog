@@ -31,6 +31,12 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"  # Ignore les variables d'environnement en trop si présent
     )
+    
+    # --- Database Settings ---
+    database_url: str
+    
+    # --- Database Settings ---
+    #database_url: str = "sqlite+aiosqlite:///./blog.db"
 
     # --- JWT Security Settings ---
     secret_key: SecretStr
@@ -41,9 +47,6 @@ class Settings(BaseSettings):
 
     access_token_expire_minutes: int = 30
     """Token expiration time in minutes. Defaults to 30 minutes."""
-    
-    # --- Database Settings ---
-    database_url: str = "sqlite+aiosqlite:///./blog.db"
     
     # --- File Upload Settings ---
     max_upload_size_bytes: int  = 5 * 1024 * 1024  # 5 MB

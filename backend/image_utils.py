@@ -37,20 +37,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 from io import BytesIO
 import cloudinary
 import cloudinary.uploader

@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from typing import Annotated
 from sqlalchemy import select, func
-from database import get_db, engine, Base
+from database import get_db, engine
 import models
 from routes import users, posts
 from config import settings
@@ -46,9 +46,9 @@ async def lifespan(_app: FastAPI):
         None
     """
     # --- Startup ---
-    async with engine.begin() as conn:
-        # Create tables based on SQLAlchemy models
-        await conn.run_sync(Base.metadata.create_all)
+    # async with engine.begin() as conn:
+    #     # Create tables based on SQLAlchemy models
+    #     await conn.run_sync(Base.metadata.create_all)
     yield
     # --- Shutdown ---
     await engine.dispose()
